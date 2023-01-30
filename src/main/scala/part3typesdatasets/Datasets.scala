@@ -1,6 +1,6 @@
 package part3typesdatasets
 
-import org.apache.spark.sql.functions.{avg, col}
+import org.apache.spark.sql.functions.{array_contains, avg, col}
 import org.apache.spark.sql.types.{DateType, DoubleType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, Encoders, SparkSession}
 
@@ -92,5 +92,48 @@ object Datasets extends App {
 
   // also use the DF functions!
   carsDS.select(avg(col("Horsepower"))).show
+
+ // Joins
+
+ def readDF(path: String) = spark.read
+   .option("inferSchema", "true")
+   .json(s"src/main/resources/data/$path")
+
+ case class Guitar(id: Long, make: String, model: String, guitarType: String)
+ case class GuitarPlayer(id: Long, name: String, guitars: Seq[Long], band: Long)
+
+ case class Band(id: Long, name: String, hometown: String, year: Long)
+
+ val guitarsDS = readDF("guitars.json").as[Guitar]
+ val guitarPlayersDS = readDF("guitarPlayers.json").as[GuitarPlayer]
+ val bandsDS = readDF("bands.json").as[Band]
+
+ val guitarPlayerBandsDS: Dataset[(GuitarPlayer, Band)] = guitarPlayersDS.joinWith(
+    bandsDS,
+    guitarPlayersDS.col("band") === bandsDS.col("id")
+ )
+
+ guitarPlayerBandsDS.show
+
+ /**
+   * Exercise: join the guitarsDS and guitarPlayersDS, outer join
+   * (hint: use array_contains)
+   */
+
+
+ val guitarsWithPlayersDS = guitarPlayersDS.joinWith(
+  guitarsDS,
+  array_contains(guitarPlayersDS.col("guitars"), guitarsDS.col("id")),
+  "outer"
+ )
+
+ // Grouping DS
+
+ val carsGroupedByOrigin = carsDS
+   .groupByKey(_.Origin)
+   .count()
+   .show()
+
+ // joins and group are WIDE transformations, will involve SHUFFLE operations
 
 }
