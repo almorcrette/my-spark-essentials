@@ -1,6 +1,7 @@
 package part3typesdatasets
 
 import org.apache.spark.sql.functions.{avg, col}
+import org.apache.spark.sql.types.{DateType, DoubleType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, Encoders, SparkSession}
 
 import java.sql.Date
@@ -11,16 +12,18 @@ object Datasets extends App {
    .config("spark.master", "local")
    .getOrCreate()
 
-  val numbersDF: DataFrame = spark.read
-    .format("csv")
-    .option("header", "true")
-    .option("interSchema", "true")
-    .load("src/main/resources/data/numbers.csv")
+ val numbersDF: DataFrame = spark.read
+   .format("csv")
+   .option("header", "true")
+   .option("inferSchema", "true")
+   .load("src/main/resources/data/numbers.csv")
 
-  numbersDF.printSchema()
+ numbersDF.printSchema()
 
-  implicit val intEncoder = Encoders.scalaInt
-  val numbersDS: Dataset[Int] = numbersDF.as[Int]
+ // convert a DF to a Dataset
+ implicit val intEncoder = Encoders.scalaInt
+ val numbersDS: Dataset[Int] = numbersDF.as[Int]
+
 
   // dataset of a complex type
 
@@ -33,18 +36,29 @@ object Datasets extends App {
                 Horsepower: Option[Long],
                 Weight_in_lbs: Long,
                 Acceleration: Double,
-                Year: String,
+                Year: Date,
                 Origin: String
                 )
 
   // 2 - read the DF from the file
-  def readDF(filename: String) = spark.read
-    .option("inferSchema", "true")
-    .json(s"src/main/resources/data/$filename")
+  val carsSchema = StructType(Array(
+   StructField("Name", StringType),
+   StructField("Miles_per_Gallon", DoubleType),
+   StructField("Cylinders", LongType),
+   StructField("Displacement", DoubleType),
+   StructField("Horsepower", LongType),
+   StructField("Weight_in_lbs", LongType),
+   StructField("Acceleration", DoubleType),
+   StructField("Year", DateType),
+   StructField("Origin", StringType)
+  ))
 
   // 3 define an econder
   import spark.implicits._ // imports all the encoders you will ever one, including   implicit val carEncoder = Encoders.product[Car]
-  val carsDF = readDF("cars.json")
+  val carsDF = spark.read
+    .schema(carsSchema)
+    .json("src/main/resources/data/cars.json")
+
 
  // 4 - convert the DF to DS
   val carsDS = carsDF.as[Car]
