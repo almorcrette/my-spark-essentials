@@ -1,6 +1,8 @@
 package part5lowlevel
 
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.api.java.JavaRDD.fromRDD
+import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.{SaveMode, SparkSession}
 
 import scala.io.Source
 
@@ -17,7 +19,7 @@ object RDDs extends App {
   val numbersRDD = sc.parallelize(numbers)
 
   // 2 - reading from files
-  case class StockValue(company: String, date: String, price: Double)
+  case class StockValue(symbol: String, date: String, price: Double)
   def readStocks(filename: String): List[StockValue] =
     Source.fromFile(filename)
       .getLines()
@@ -51,10 +53,105 @@ object RDDs extends App {
   // RDD -> DS
   val numbersDS = spark.createDataset(numbersRDD)
 
+  // Transformations
+
+  // counting
+  val msftRDD = stocksRDD.filter(_.symbol == "MSFT") // lazy transformation
+  val msCount = msftRDD.count() // eager ACTION
+
+  //distinct
+  val companyRDD = stocksRDD.map(_.symbol).distinct() // also lazy
+
+  // min and max
+  implicit val stockOrdering: Ordering[StockValue] =
+    Ordering.fromLessThan[StockValue]((sa: StockValue, sb: StockValue) => sa.price < sb.price)
+  val minMsft = msftRDD.min()
+
+  // reduce
+  numbersRDD.reduce(_ + _)
+
+  // grouping
+  val groupedStocksRDD = stocksRDD.groupBy(_.symbol)
+  // ^^ very expensive
+
+  // Partitioning
+
+//  val repartitionedStocksRDD = stocksRDD.repartition(30)
+
+//  val repartitionedStocksDF = repartitionedStocksRDD.toDF
+
+//  repartitionedStocksDF.write
+//    .mode(SaveMode.Overwrite)
+//    .parquet("src/main/resources/data/stocks30")
+//
+//  stocksDF.write
+//    .mode(SaveMode.Overwrite)
+//    .parquet("src/main/resources/data/anotherStocks")
+
+  /*
+    Repartitioning is EXPENSIVE. Involves shuffling.
+    Best practice: partition EARLY, then process that.
+      Size of a partition 10 -100MB.
+   */
+
+  // coalesce
+//  val coalescedRDD = repartitionedStocksRDD.coalesce(15) // does NOT involve shuffling
+//
+//  val coalescedDF = coalescedRDD.toDF
+//
+//  coalescedDF.write
+//    .mode(SaveMode.Overwrite)
+//    .parquet("src/main/resources/data/stocks15")
+
+  /**
+    * Exercises
+    *
+    * 1. Read the movies.json as an RDD.
+    * 2. Show the distinct genres as an RDD.
+    * 3. Select all the movies in the Drama genre with IMDB rating > 6.
+    * 4. Show the average rating of movies by genre.
+    * */
+
+  // 1. Read the movies.json as an RDD
+
+  case class Movies(title: String, genre: String, rating: Double)
+
+  val moviesDF = spark.read
+    .option("inferSchema", "true")
+    .json("src/main/resources/data/movies.json")
+
+  val moviesDFSelectedCols = moviesDF.select(
+    col("Title").as("title"),
+    col("Major_Genre").as("genre"),
+    col("IMDB_Rating").as("rating")
+  ).na.drop()
+
+  moviesDFSelectedCols.show()
 
 
+  val moviesDS = moviesDFSelectedCols.as[Movies]
+  val moviesRDD = moviesDS.rdd
+
+  // 2. Show the distinct genres as an RDD.
+
+  val movieGenres = moviesRDD.map(_.genre).distinct()
 
 
+  // 3. Select all the movies in the Drama genre with IMDB rating > 6.
+
+  val goodDramasRDD = moviesRDD
+    .filter(movie => (movie.genre == "Drama") && (movie.rating > 6))
+
+
+  // 4. Show the average rating of movies by genre
+
+  case class GenreAvgRating(genre: String, rating: Double)
+
+  val avgRatingByGenreRDD = moviesRDD.groupBy(_.genre).map {
+    case (genre, movies) => GenreAvgRating(genre, movies.map(_.rating).sum / movies.size)
+  }
+
+  avgRatingByGenreRDD.toDF.show
 
 
 
